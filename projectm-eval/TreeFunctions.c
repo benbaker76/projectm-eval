@@ -152,15 +152,30 @@ void prjm_eval_intrinsic_functions(prjm_eval_intrinsic_function_list_ptr list, u
     *list = intrinsic_function_table;
 }
 
+/* Where the state below lives: one per thread. */
+#if defined(_MSC_VER)
+#define PRJM_EVAL_THREAD_LOCAL __declspec(thread)
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
+#define PRJM_EVAL_THREAD_LOCAL _Thread_local
+#else
+#define PRJM_EVAL_THREAD_LOCAL __thread
+#endif
+
 /* This is Milkdrop's original rand() implementation. */
 static uint32_t prjm_eval_genrand_int32(void)
 {
     uint32_t y;
-    static uint32_t mag01[2] = { 0x0UL, MATRIX_A };
+    static const uint32_t mag01[2] = { 0x0UL, MATRIX_A };
     /* mag01[x] = x * MATRIX_A  for x=0,1 */
 
-    static uint32_t mt[N]; /* the array for the state vector  */
-    static int32_t mti; /* mti==N+1 means mt[N] is not initialized */
+    /* One state per thread. Expressions are compiled and run wherever their preset is -- an
+       application may load a preset on one thread while another draws with one it loaded
+       earlier -- and a state shared between them is a data race: two threads stepping mti at
+       once read past the end of mt, and one seeing mti wrapped to 0 mid-refill seeds the whole
+       state again. Per thread, each gets Milkdrop's own sequence from its fixed seed, and one
+       thread's presets no longer move another's along. */
+    static PRJM_EVAL_THREAD_LOCAL uint32_t mt[N]; /* the array for the state vector  */
+    static PRJM_EVAL_THREAD_LOCAL int32_t mti; /* mti==N+1 means mt[N] is not initialized */
 
 
     if (!mti)
